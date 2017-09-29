@@ -256,7 +256,7 @@ To create additional (non-admin) users in your environment, login to your master
 
 ### Access to Cockpit
 
-If you enable Cockpit, then the password for 'root' is set to be the same as the password for the first OpenShift user.
+If you enable Cockpit then the password for 'root' is set to be the same as the password for the first OpenShift user.
 
 Use user 'root' and the same password as you assigned to your OpenShift admin to login to Cockpit ( https://publicDNSname:9090 ).
    
