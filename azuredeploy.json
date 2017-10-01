@@ -463,9 +463,6 @@
     "newStorageAccountRegistry": "[concat('registry', uniqueString(concat(resourceGroup().id, 'registry')))]",
     "newStorageAccountPersistentVolume1": "[concat('pv1sa', uniqueString(concat(resourceGroup().id, 'persistentvolume1')))]",
     "newStorageAccountPersistentVolume2": "[concat('pv2sa', uniqueString(concat(resourceGroup().id, 'persistentvolume2')))]",
-    "addressPrefix": "10.0.0.0/8",
-    "masterSubnetPrefix": "10.1.0.0/16",
-    "nodeSubnetPrefix": "10.2.0.0/16",
     "virtualNetworkName": "openshiftvnet",
     "masterSubnetName": "mastersubnet",
     "nodeSubnetName": "nodesubnet",
@@ -1273,11 +1270,6 @@
         ],
         "networkSecurityGroup": {
           "id": "[resourceId('Microsoft.Network/networkSecurityGroups', concat(variables('openshiftBastionHostname'), '-nsg'))]"
-        },
-        "dnsSettings": {
-          "dnsServers": [
-            "168.63.129.16"
-          ]
         }
       }
     },
@@ -1316,11 +1308,6 @@
         ],
         "networkSecurityGroup": {
           "id": "[resourceId('Microsoft.Network/networkSecurityGroups', concat(variables('openshiftMasterHostname'), '-nsg'))]"
-        },
-        "dnsSettings": {
-          "dnsServers": [
-            "168.63.129.16"
-          ]
         }
       }
     },
@@ -1359,11 +1346,6 @@
         ],
         "networkSecurityGroup": {
           "id": "[resourceId('Microsoft.Network/networkSecurityGroups', concat(variables('openshiftInfraHostname'), '-nsg'))]"
-        },
-        "dnsSettings": {
-          "dnsServers": [
-            "168.63.129.16"
-          ]
         }
       }
     },
@@ -1396,11 +1378,6 @@
         ],
         "networkSecurityGroup": {
           "id": "[resourceId('Microsoft.Network/networkSecurityGroups', concat(variables('openshiftNodeHostname'), '-nsg'))]"
-        },
-        "dnsSettings": {
-          "dnsServers": [
-            "168.63.129.16"
-          ]
         }
       }
     },
