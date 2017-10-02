@@ -8,7 +8,7 @@
         "description": "Base URL for Template Files",
         "artifactsBaseUrl": ""
       },
-      "defaultValue": "https://raw.githubusercontent.com/RaviTella/openshift-container-platform-Houston/master/"
+      "defaultValue": "https://raw.githubusercontent.com/RaviTella/MTC_OpenShift_Container_Platform/master/"
     },
     "customVhdOrGallery": {
       "type": "string",
