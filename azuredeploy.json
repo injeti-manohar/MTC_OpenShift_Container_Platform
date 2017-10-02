@@ -412,7 +412,7 @@
       "type": "string",
       "minLength": 1,
       "metadata": {
-        "description": "Default Virtual Network name"
+        "description": "Virtual Network name"
       }
     },
 
@@ -420,7 +420,7 @@
       "type": "string",
       "minLength": 1,
       "metadata": {
-        "description": "Default resource group name"
+        "description": "Virtual Network resource group name"
       }
     },
 
@@ -428,14 +428,14 @@
       "type": "string",
       "minLength": 1,
       "metadata": {
-        "description": "Default master subnet name"
+        "description": "Master subnet name"
       }
     },
     "nodeSubnetName": {
       "type": "string",
-      "\"minLength\": 1,": null,
+      "minLength": 1,
       "metadata": {
-        "description": "Default node subnet name"
+        "description": "Node subnet name"
       }
     }
 
