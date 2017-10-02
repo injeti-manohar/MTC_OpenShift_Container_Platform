@@ -410,7 +410,7 @@
     },
     "virtualNetworkName": {
       "type": "string",
-      "defaultValue": "openshiftvnet",
+      "minLength": 1,
       "metadata": {
         "description": "Default Virtual Network name"
       }
@@ -418,7 +418,7 @@
 
     "virtualNetworkResourceGroup": {
       "type": "string",
-      "defaultValue": "rt-openshiftinfra_rg",
+      "minLength": 1,
       "metadata": {
         "description": "Default resource group name"
       }
@@ -426,14 +426,14 @@
 
     "masterSubnetName": {
       "type": "string",
-      "defaultValue": "mastersubnet",
+      "minLength": 1,
       "metadata": {
         "description": "Default master subnet name"
       }
     },
     "nodeSubnetName": {
       "type": "string",
-      "defaultValue": "nodesubnet",
+      "\"minLength\": 1,": null,
       "metadata": {
         "description": "Default node subnet name"
       }
