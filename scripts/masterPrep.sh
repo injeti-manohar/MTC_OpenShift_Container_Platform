@@ -1,9 +1,6 @@
 #!/bin/bash
 echo $(date) " - Starting Master Prep Script"
 
-sudo echo "supersede domain-name \"figfvsucpntebbkc0hnxjdukdc.bx.internal.cloudapp.net\";" >> /etc/dhcp/dhclient.conf
-sudo dhclient -v 
-
 SELECT=$1
 USERNAME_ORG=$2
 PASSWORD_ACT_KEY="$3"

@@ -1,17 +1,13 @@
 # OpenShift Container Platform Deployment Template
 
-Bookmark [aka.ms/OpenShift](http://aka.ms/OpenShift) for future reference.
-
-**For OpenShift Origin refer to https://github.com/Microsoft/openshift-origin**
-
 ## OpenShift Container Platform 3.5 with Username / Password authentication for OpenShift
 
-This template deploys OpenShift Container Platform with basic username / password for authentication to OpenShift. It includes the following resources:
+This template deploys OpenShift Container Platform into an existing VNet with basic username / password for authentication to OpenShift. It includes the following resources:
 
 |Resource           	|Properties                                                                                                                          |
 |-----------------------|------------------------------------------------------------------------------------------------------------------------------------|
-|Virtual Network   		|**Address prefix:** 10.0.0.0/8<br />**Master subnet:** 10.1.0.0/16<br />**Node subnet:** 10.2.0.0/16                      |
-|Master Load Balancer	|2 probes and 2 rules for TCP 8443 and TCP 9090 <br/> NAT rules for SSH on Ports 2200-220X                                           |
+|Virtual Network   		|**Master subnet:** Deployment parameter<br />**Node subnet:** Deployment parameter                      |
+|Master Load Balancer	|2 probes and 2 rules for TCP 8443 and TCP 9090                                            |
 |Infra Load Balancer	|3 probes and 3 rules for TCP 80, TCP 443 and TCP 9090 									                                             |
 |Public IP Addresses	|Bastion Public IP for Bastion Node<br />OpenShift Master public IP attached Master Load Balancer<br />OpenShift Router public IP attached to Infra Load Balancer            |
 |Storage Accounts   	|1 Storage Account for Masters <br />1 Storage Accounts for Infra VMs and Bastion VM<br />2 Storage Accounts for Node VMs<br />1 Storage Account for Private Docker Registry<br />2 Storage Accounts for Persistent Volumes  |
@@ -71,7 +67,7 @@ You will need to create a Key Vault to store your SSH Private Key that will then
 
 To configure Azure as the Cloud Provider for OpenShift Container Platform, you will need to create an Azure Active Directory Service Principal.  The easiest way to perform this task is via the Azure CLI.  Below are the steps for doing this.
 
-You will want to create the Resource Group that you will ultimately deploy the OpenShift cluster to prior to completing the following steps.  If you don't, then wait until you initiate the deployment of the cluster before completing **Azure CLI 1.0 Step 2**. If using **Azure CLI 2.0**, complete step 2 to create the Service Principal prior to deploying the cluster and then assign permissions based on **Azure CLI 1.0 Step 2**.
+You will want to create the Resource Group (This Resource Group must be in the same location as the VNet Resource Group) that you will ultimately deploy the OpenShift cluster to prior to completing the following steps.  If you don't, then wait until you initiate the deployment of the cluster before completing **Azure CLI 1.0 Step 2**. If using **Azure CLI 2.0**, complete step 2 to create the Service Principal prior to deploying the cluster and then assign permissions based on **Azure CLI 1.0 Step 2**.
  
 **Azure CLI 1.0**
 
@@ -175,12 +171,15 @@ You will also need to get the Pool ID that contains your entitlements for OpenSh
 18. aadClientSecret: Azure Active Directory Client Secret for Service Principal
 19. defaultSubDomainType: This will either be xipio (if you don't have your own domain) or custom if you have your own domain that you would like to use for routing
 20. defaultSubDomain: The wildcard DNS name you would like to use for routing if you selected custom above.  If you selected xipio above, you must still enter something here but it will not be used
-
+21. virtualNetworkName: The existing virtual network you would like to deploy into
+22. virtualNetworkResourceGroup: The name of the resource group to which the virtual network belongs
+23. masterSubnetName: The name of the existing master subnet
+24. nodeSubnetName: The name of the existing node subnet 
 ## Deploy Template
 
 Deploy to Azure using Azure Portal: 
-<a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FRaviTella%2Fopenshift-container-platform-Houston%2Fmaster%2Fazuredeploy.json" target="_blank"><img src="http://azuredeploy.net/deploybutton.png"/></a>
-<a href="http://armviz.io/#/?load=https%3A%2F%2Fraw.githubusercontent.com%2FMicrosoft%2Fopenshift-container-platform%2Fmaster%2Fazuredeploy.json" target="_blank">
+<a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FRaviTella%2FMTC_OpenShift_Container_Platform%2Fmaster%2Fazuredeploy.json" target="_blank"><img src="http://azuredeploy.net/deploybutton.png"/></a>
+<a href="http://armviz.io/#/?load=https%3A%2F%2Fraw.githubusercontent.com%2FRaviTella%2FMTC_OpenShift_Container_Platform%2Fmaster%2Fazuredeploy.json" target="_blank">
     <img src="http://armviz.io/visualizebutton.png"/>
 </a><br/>
 
@@ -217,6 +216,11 @@ If you encounter an error during deployment of the cluster, please view the depl
 1. Exit Code 3: Your Red Hat Subscription User Name / Password or Organization ID / Activation Key is incorrect
 2. Exit Code 4: Your Red Hat Pool ID is incorrect or there are no entitlements available
 3. Exit Code 5: Unable to provision Docker Thin Pool Volume
+4. Additionally in azure deployments, you might see an error which includes the following text during the network interface creation: 
+
+   Please make sure that the referenced resource exists, and that both resources are in the same region
+
+    This error occurs when the resources you are creating during the deployment and in a different region from the Virtual network. To fix this error make sure that the location of resource group of the VNet and the deployment are the same. 
 
 For further troubleshooting, please SSH into your Bastion node on port 22.  You will need to be root **(sudo su -)** and then navigate to the following directory: **/var/lib/waagent/custom-script/download**<br/><br/>
 You should see a folder named '0' and '1'.  In each of these folders, you will see two files, stderr and stdout.  You can look through these files to determine where the failure occurred.
