@@ -1,9 +1,5 @@
 # OpenShift Container Platform Deployment Template
 
-Bookmark [aka.ms/OpenShift](http://aka.ms/OpenShift) for future reference.
-
-**For OpenShift Origin refer to https://github.com/Microsoft/openshift-origin**
-
 ## OpenShift Container Platform 3.5 with Username / Password authentication for OpenShift
 
 This template deploys OpenShift Container Platform into an existing VNet with basic username / password for authentication to OpenShift. It includes the following resources:
@@ -220,8 +216,9 @@ If you encounter an error during deployment of the cluster, please view the depl
 1. Exit Code 3: Your Red Hat Subscription User Name / Password or Organization ID / Activation Key is incorrect
 2. Exit Code 4: Your Red Hat Pool ID is incorrect or there are no entitlements available
 3. Exit Code 5: Unable to provision Docker Thin Pool Volume
-4. Additionally in azure deployments, you might see an error which includes the following text during the network interface creation. 
-   “Please make sure that the referenced resource exists, and that both resources are in the same region”
+4. Additionally in azure deployments, you might see an error which includes the following text during the network interface creation: 
+
+   Please make sure that the referenced resource exists, and that both resources are in the same region
 
     This error occurs when the resources you are creating during the deployment and in a different region from the Virtual network. To fix this error make sure that the location of resource group of the VNet and the deployment are the same. 
 
