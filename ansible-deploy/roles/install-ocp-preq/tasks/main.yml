@@ -1,0 +1,65 @@
+---
+# Tasks for registering VM with RH subscription and installing pre-requisite s/w
+
+- name: Register RHEL using subscription manager
+  command: subscription-manager register --username={{ rh_account_name }} --password={{ rh_account_pwd }}
+  ignore_errors: yes
+
+- name: Pull latest subscription from RHSM
+  command: subscription-manager refresh
+
+- name: Attach subscription pool-id
+  command: subscription-manager attach --pool={{ pool_id }}
+  ignore_errors: yes
+
+- name: Disable all enabled RHSM repositories
+  command: subscription-manager repos --disable="*"
+  ignore_errors: yes
+
+- name: Enable repositories for OCP
+  command: subscription-manager repos \
+    --enable="rhel-7-server-rpms" \
+    --enable="rhel-7-server-extras-rpms" \
+    --enable="rhel-7-server-ose-{{ ocp_ver }}-rpms" \
+    --enable="rhel-7-fast-datapath-rpms" \
+    --enable="rhel-7-server-ansible-2.4-rpms"
+  ignore_errors: yes
+
+- name: Install required utilities and tools
+  yum:
+    name: wget,git,net-tools,bind-utils,yum-utils,iptables-services,bridge-utils,bash-completion,kexec-tools,sos,psacct
+    state: latest
+
+- name: Run yum update
+  yum:
+    name: '*'
+    state: latest
+
+# IMPORTANT: If you are installing OpenShift v3.9 or lower, then you will need to install 'atomic-openshift-utils' package instead of 'openshift-ansible' package.  This script defaults to installing 'openshift-ansible' package for OpenShift v3.10+
+
+- name: Install OpenShift utilities
+  yum:
+    name: openshift-ansible
+    state: latest
+
+- name: Install docker
+  yum:
+    name: docker-{{ docker_ver }}
+    state: present
+
+- name: Enable docker to start at boot-time
+  systemd:
+    name: docker
+    enabled: yes
+    masked: no
+
+- name: Reboot VM
+  shell: nohup bash -c "sleep 2s && shutdown -r now" &
+
+- name: Wait for machine to come back up
+  wait_for_connection:
+    timeout: 240
+    delay: 20
+
+- name: Check docker version
+  command: docker version

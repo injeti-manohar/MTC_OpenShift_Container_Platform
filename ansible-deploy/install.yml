@@ -1,0 +1,10 @@
+# This playbook installs pre-requisites s/w and prepares the VM's for OpenShift installation.
+# Author: Ganesh.Radhakrishnan@microsoft.com
+# ID05222018
+
+- hosts: ocp-servers
+  become: yes
+  become_method: sudo
+
+  roles:
+    - install-ocp-preq

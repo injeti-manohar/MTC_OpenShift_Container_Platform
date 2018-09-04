@@ -1,0 +1,5 @@
+[ocp-servers]
+ocp-master.devcls.com
+ocp-infra.devcls.com
+ocp-node1.devcls.com
+ocp-node2.devcls.com

@@ -1,0 +1,105 @@
+# Created by: ganesh.radhakrishnan@microsoft.com
+# Date: 06102018
+# Version: 2.0
+# Description: This script deploys an OpenShift CP cluster with 1 master node, 1 infrastructure node and 'N' application nodes.  All nodes are deployed within a subnet in a VNET.  The master and infrastructure nodes are assigned Public IP's and are resolved using Azure DNS.
+#
+# Notes:
+# ID06102018: Created inventory file
+# ID06272018: Updated inventory to deploy logging components
+# ID07312018: Incorporated v3.10 enhancements to this inventory file
+
+# Create an OSEv3 group that contains the masters and nodes groups
+[OSEv3:children]
+masters
+nodes
+etcd
+nfs
+
+# Set variables common for all OSEv3 hosts
+[OSEv3:vars]
+# SSH user, this user should allow ssh based auth without requiring a password
+ansible_ssh_user=ocpuser
+
+# ID07312018.n
+# Whitelist images which the OAB can access from the OpenShift Container Catalog
+ansible_service_broker_local_registry_whitelist=['.*-apb$']
+
+# If ansible_ssh_user is not root, ansible_become must be set to true
+ansible_become=true
+
+# ID07312018.n
+# Define variables to configure persistent nfs storage (PV) for OAB etcd instance.
+openshift_hosted_etcd_storage_kind=nfs
+openshift_hosted_etcd_storage_nfs_options="*(rw,root_squash,sync,no_wdelay)"
+openshift_hosted_etcd_storage_nfs_directory=/opt/osev3-etcd 
+openshift_hosted_etcd_storage_volume_name=etcd-vol2 
+openshift_hosted_etcd_storage_access_modes=["ReadWriteOnce"]
+openshift_hosted_etcd_storage_volume_size=1G
+openshift_hosted_etcd_storage_labels={'storage': 'etcd'}
+
+# ID07312018.n : Node groups are new in v3.10
+# Define node groups
+openshift_node_groups=[{'name': 'node-config-master', 'labels': ['node-role.kubernetes.io/master=true', 'region=primary', 'zone=east']}, {'name': 'node-config-infra', 'labels': ['node-role.kubernetes.io/infra=true','region=infra', 'zone=default']}, {'name': 'node-config-compute', 'labels': ['node-role.kubernetes.io/compute=true', 'region=primary', 'zone=east'], 'edits': [{ 'key': 'kubeletArguments.pods-per-core','value': ['20']}]}]
+
+openshift_deployment_type=openshift-enterprise
+openshift_disable_check=disk_availability,docker_storage,memory_availability
+openshift_clock_enabled=true
+
+# Uncomment this variable for provisioning cloud provider plugins
+#openshift_master_dynamic_provisioning_enabled=True
+
+# Change the Master API and Console port to 443
+openshift_master_api_port=443
+openshift_master_console_port=443
+
+# Configure the Router subdomain and hostnames for Master nodes
+openshift_master_default_subdomain=cloudapps.onemtc.net
+openshift_master_cluster_hostname=ocp-master.onemtcprod.net
+openshift_master_cluster_public_hostname=ocp-master.onemtc.net
+
+# Metrics configuration
+openshift_metrics_install_metrics=true
+openshift_metrics_cassandra_storage_type=emptydir
+#openshift_metrics_hawkular_hostname=ocp-infra.ocp-dev.com
+
+# Uncomment the following variables for configuring logging.  Keep in mind, persistent storage (NFS or a cloud storage) is required.
+# Logging configuration
+#openshift_logging_install_logging=true
+#openshift_logging_es_pvc_dynamic=true
+#openshift_logging_es_cluster_size=3
+#openshift_logging_es_nodeselector={'region':'infra'}
+#openshift_logging_kibana_nodeselector={'region':'infra'}
+#openshift_logging_curator_nodeselector={'region':'infra'}
+#openshift_logging_es_number_of_replicas=1
+
+# Set the following variables to specify a private container registry other than the default (registry.access.redhat.com)
+#oreg_url_master=registry.access.redhat.com/openshift3/ose-${component}:${version}
+#oreg_url_node=registry.access.redhat.com/openshift3/ose-${component}:${version}
+# Set the alternate container image registry location.
+#oreg_url=registry.access.redhat.com/openshift3/ose-${component}:${version}
+# Set to true if pointing to an image registry other than the default (registry.access.redhat.com)
+#openshift_examples_modify_imagestreams=true
+
+# Enable htpasswd authentication; defaults to DenyAllPasswordIdentityProvider
+# ID07312018.n 'filename' is no longer supported. The htpasswd file will be placed (or expected to be in this directory) in /etc/origin/master
+openshift_master_identity_providers=[{'name': 'htpasswd_auth', 'login': 'true', 'challenge': 'true', 'kind': 'HTPasswdPasswordIdentityProvider'}]
+
+# Host group for masters
+[masters]
+ocp-master.onemtcprod.net
+
+# Host group for etcd
+[etcd]
+ocp-master.onemtcprod.net
+
+# ID07312018.n
+# Host group for OAB's etcd instance
+[nfs]
+ocp-master.onemtcprod.net
+
+# Host group for nodes, includes region info
+[nodes]
+ocp-master.onemtcprod.net openshift_node_group_name='node-config-master' openshift_hostname=ocp-master.onemtcprod.net
+ocp-infra.onemtcprod.net openshift_node_group_name='node-config-infra' openshift_hostname=ocp-infra.onemtcprod.net
+ocp-node1.onemtcprod.net openshift_node_group_name='node-config-compute' openshift_hostname=ocp-node1.onemtcprod.net
+ocp-node2.onemtcprod.net openshift_node_group_name='node-config-compute' openshift_hostname=ocp-node2.onemtcprod.net
