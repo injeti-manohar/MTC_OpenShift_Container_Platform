@@ -1,269 +1,231 @@
-# OpenShift Container Platform Deployment Template
+## Deploy Redhat OpenShift CP 3.9+ on Microsoft Azure
+Use the artifacts in this project to deploy a multi-node non-HA OpenShift CP cluster on Azure.  For deploying a production grade highly available OpenShift CP cluster on Azure, refer to this [Microsoft GitHub](https://github.com/Microsoft/openshift-container-platform) project.
 
-## OpenShift Container Platform 3.5 with Username / Password authentication for OpenShift
+**Deployment Topology**
 
-This template deploys OpenShift Container Platform into an existing VNet with basic username / password for authentication to OpenShift. It includes the following resources:
+![alt tag](./images/OCP-Azure-Deploy.jpg)
 
-|Resource           	|Properties                                                                                                                          |
-|-----------------------|------------------------------------------------------------------------------------------------------------------------------------|
-|Virtual Network   		|**Master subnet:** Deployment parameter<br />**Node subnet:** Deployment parameter                      |
-|Master Load Balancer	|2 probes and 2 rules for TCP 8443 and TCP 9090                                            |
-|Infra Load Balancer	|3 probes and 3 rules for TCP 80, TCP 443 and TCP 9090 									                                             |
-|Public IP Addresses	|Bastion Public IP for Bastion Node<br />OpenShift Master public IP attached Master Load Balancer<br />OpenShift Router public IP attached to Infra Load Balancer            |
-|Storage Accounts   	|1 Storage Account for Masters <br />1 Storage Accounts for Infra VMs and Bastion VM<br />2 Storage Accounts for Node VMs<br />1 Storage Account for Private Docker Registry<br />2 Storage Accounts for Persistent Volumes  |
-|Network Security Groups|1 Network Security Group Master VMs<br />1 Network Security Group for Infra VMs<br />1 Network Security Group for Node VMs<br />1 Network Security Group for Bastion VM  |
-|Availability Sets      |1 Availability Set for Master VMs<br />1 Availability Set for Infra VMs<br />1 Availability Set for Node VMs  |
-|Virtual Machines   	|1 Bastion Node - Used to Run Ansible Playbook for OpenShift deployment<br />1, 2, or 3 Masters<br />1, 2, or 3 Infra nodes<br />User-defined number of nodes (1 to 30)<br />All VMs include a single attached data disk for Docker thin pool logical volume|
+**Prerequisites**
+- [Azure CLI 2.0](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest) installed on a workstation/PC 
+- An Azure user account with "Owner" role permissions at the **Subscription** level.
+- Access to a Windows or Linux terminal window.  You **must** be logged into to your Azure account via the CLI before proceeding with the next steps.
 
-![Cluster Diagram](images/openshiftdiagram.jpg)
+This project assumes readers have prior experience installing Red Hat OpenShift Container Platform and/or have gone thru the installation chapters in the OpenShift documentation.  As such, OpenShift exposes multiple parameters (Ansible variables) for configuring different sub-systems and various aspects of those sub-systems.  To review and/or get a deeper understanding of all the configuration options, refer to the **Installing Clusters** chapter in the [OpenShift Documentation](https://docs.openshift.com/).
 
-## READ the instructions in its entirety before deploying!
-
-This template deploys multiple VMs and requires some pre-work before you can successfully deploy the OpenShift Cluster.  If you don't get the pre-work done correctly, you will most likely fail to deploy the cluster using this template.  Please read the instructions completely before you proceed. 
-
-This template allows you to choose between a custom VHD image in an existing Storage Account or the On-Demand Red Hat Enterprise Linux image from the Azure Gallery. 
->If you use the On-Demand image, there is an hourly charge for using this image.  At the same time, the instance will be registered to your Red Hat subscription so you will also be using one of your entitlements. This will lead to "double billing".
-
-After successful deployment, the Bastion Node is no longer required unless you want to use it to add nodes or run other playbooks in the future.  You can turn it off and delete it or keep it around for running future playbooks.
-
-## Prerequisites
-
-### Generate SSH Keys
-
-You'll need to generate an SSH key pair (Public / Private) in order to provision this template. Ensure that you do **NOT** include a passphrase with the private key. <br/><br/>
-If you are using a Windows computer, you can download puttygen.exe.  You will need to export to OpenSSH (from Conversions menu) to get a valid Private Key for use in the Template.<br/><br/>
-From a Linux or Mac, you can just use the ssh-keygen command.  Once you are finished deploying the cluster, you can always generate new keys that uses a passphrase and replace the original ones used during inital deployment.
-
-### Create Key Vault to store SSH Private Key
-
-You will need to create a Key Vault to store your SSH Private Key that will then be used as part of the deployment.  This extra work is to provide security around the Private Key - especially since it does not have a passphrase.  I recommend creating a Resource Group specifically to store the KeyVault.  This way, you can reuse the KeyVault for other deployments and you won't have to create this every time you chose to deploy another OpenShift cluster.
-
-1. Create KeyVault using Powershell <br/>
-  a.  Create new resource group: `New-AzureRMResourceGroup -Name 'ResourceGroupName' -Location 'West US'`<br/>
-  b.  Create key vault: `New-AzureRmKeyVault -VaultName 'KeyVaultName' -ResourceGroup 'ResourceGroupName' -Location 'West US'`<br/>
-  c.  Create variable with sshPrivateKey: `$securesecret = ConvertTo-SecureString -String '[copy ssh Private Key here - including line feeds]' -AsPlainText -Force`<br/>
-  d.  Create Secret: `Set-AzureKeyVaultSecret -Name 'SecretName' -SecretValue $securesecret -VaultName 'KeyVaultName'`<br/>
-  e.  Enable for Template Deployment: `Set-AzureRMKeyVaultAccessPolicy -VaultName 'KeyVaultName' -ResourceGroupName 'ResourceGroupName' -EnabledForTemplateDeployment`<br/>
-
-2. **Create Key Vault using Azure CLI 1.0**<br/>
-  a.  Create new Resource Group: azure group create \<name\> \<location\><br/>
-         Ex: `azure group create ResourceGroupName 'East US'`<br/>
-  b.  Create Key Vault: azure keyvault create -u \<vault-name\> -g \<resource-group\> -l \<location\><br/>
-         Ex: `azure keyvault create -u KeyVaultName -g ResourceGroupName -l 'East US'`<br/>
-  c.  Create Secret: azure keyvault secret set -u \<vault-name\> -s \<secret-name\> --file \<private-key-file-name\><br/>
-         Ex: `azure keyvault secret set -u KeyVaultName -s SecretName --file ~/.ssh/id_rsa`<br/>
-  d.  Enable the Keyvvault for Template Deployment: azure keyvault set-policy -u \<vault-name\> --enabled-for-template-deployment true<br/>
-         Ex: `azure keyvault set-policy -u KeyVaultName --enabled-for-template-deployment true`<br/>
-
-3. **Create Key Vault using Azure CLI 2.0**<br/>
-  a.  Create new Resource Group: az group create -n \<name\> -l \<location\><br/>
-         Ex: `az group create -n ResourceGroupName -l 'East US'`<br/>
-  b.  Create Key Vault: az keyvault create -n \<vault-name\> -g \<resource-group\> -l \<location\> --enabled-for-template-deployment true<br/>
-         Ex: `az keyvault create -n KeyVaultName -g ResourceGroupName -l 'East US' --enabled-for-template-deployment true`<br/>
-  c.  Create Secret: az keyvault secret set --vault-name \<vault-name\> -n \<secret-name\> --file \<private-key-file-name\><br/>
-         Ex: `az keyvault secret set --vault-name KeyVaultName -n SecretName --file ~/.ssh/id_rsa`<br/>
-
-### Generate Azure Active Directory (AAD) Service Principal
-
-To configure Azure as the Cloud Provider for OpenShift Container Platform, you will need to create an Azure Active Directory Service Principal.  The easiest way to perform this task is via the Azure CLI.  Below are the steps for doing this.
-
-You will want to create the Resource Group (This Resource Group must be in the same location as the VNet Resource Group) that you will ultimately deploy the OpenShift cluster to prior to completing the following steps.  If you don't, then wait until you initiate the deployment of the cluster before completing **Azure CLI 1.0 Step 2**. If using **Azure CLI 2.0**, complete step 2 to create the Service Principal prior to deploying the cluster and then assign permissions based on **Azure CLI 1.0 Step 2**.
- 
-**Azure CLI 1.0**
-
-1. **Create Service Principal**<br/>
-  a.  azure ad sp create -n \<friendly name\> -p \<password\> --home-page \<URL\> --identifier-uris \<URL\><br/>
-      Ex: `azure ad sp create -n openshiftcloudprovider -p Pass@word1 --home-page http://myhomepage --identifier-uris http://myhomepage`
-
-The entries for --home-page and --identifier-uris is not important for this use case so they do not have to be valid links.
-You will get an output similar to this
-
+**A] Deploy a *non-HA* OpenShift Cluster**
+1. Fork this [GitHub repository](https://github.com/ganrad/ocp-on-azure) to your GitHub account.  Open a terminal window on your PC and clone this repository (see below).  Make sure you are using the GitHub URL of your forked repository.  
 ```
-info:    Executing command ad sp create
-+ Creating application openshift demo cloud provider
-+ Creating service principal for application 198c4803-1236-4c3f-ad90-46e5f3b4cd2a
-data:    Object Id:               00419334-174b-41e8-9b83-9b5011d8d352
-data:    Display Name:            openshiftcloudprovider
-data:    Service Principal Names:
-data:                             198c4803-1236-4c3f-ad90-46e5f3b4cd2a
-data:                             http://myhomepage
-info:    ad sp create command OK
+# Clone this GitHub repository.  Substitute your GitHub account ID in the command below.
+$ git clone https://github.com/<Your-GitHub-Account>/ocp-on-azure
 ```
-Save the Object Id and the GUID in the Service Principal Names section.  This GUID is the Application ID / Client ID (aadClientId parameter).  The the password you entered as part of the CLI command is the input the aadClientSecret paramter.
+In case you haven't already generated an SSH key pair, do so now.  SSH keys will be used to authenticate and login to the Linux VM's.
+```
+# Generate an SSH key pair (private and public keys)
+$ ssh-keygen -t rsa -b 2048
+```
+Switch to the `ocp-on-azure` directory.
+```
+# Switch directory
+$ cd ocp-on-azure
+```
+There are two options for provisioning the infrastructure resources on Azure.  Use one of the options below.
 
-2. **Assign permissions to Service Principal for specific Resource Group**<br/>
-  a.  Sign into the Azure Portal<br/>
-  b.  Select the Resource Group you want to assign permissions to<br/>
-  c.  Select Access control (IAM) from middle pane<br/>
-  d.  Click Add on right pane<br/>
-  e.  For Role, Select Contributor<br/>
-  f.  In Select field, type the name of your Service Principal to find it<br/>
-  g.  Click the Service Principal from the list and hit Save<br/>
+  - **Option A:** Review and update the following variables in the script ``scripts/provision-vms.sh`` as necessary.  See below.
 
-![IAM ScreenShot1](images/openshiftiambcd.jpg)
+    VAR NAME | DEFAULT VALUE | DESCRIPTION
+    -------- | ------------- | -----------
+    OCP_RG_NAME | rh-ocp39-rg | Name of the Azure Resource Group where the OpenShift Cluster resources will be deployed
+    RG_LOCATION | westus | Region (name) where the IaaS resources should be provisioned eg., eastus, centralus, westus ...
+    RG_TAGS | CreatedBy=[Login Name] | Space separated tags in '[name=value]' format. These tags are assigned to the resource group.
+    KEY_VAULT_NAME | ocpKeyVault | Name of the key vault to store SSH private key
+    IMAGE_SIZE_MASTER | Standard_B2ms | Azure VM Image Size for OpenShift master nodes
+    IMAGE_SIZE_INFRA | Standard_B2ms | Azure VM Image Size for Infrastructure nodes
+    IMAGE_SIZE_NODE | Standard_B2ms | Azure VM Image Size for Application nodes
+    VM_IMAGE | RedHat:RHEL:7-RAW:latest | Operating system image for all VMs
+    BASTION_HOST | ocp-bastion | Name of the Bastion host
+    OCP_MASTER_HOST | ocp-master | Name of the OpenShift Master host
+    OCP_INFRA_HOST | ocp-infra | Name of the OpenShift Infrastructure host
+    VNET_RG_NAME | rh-ocp39-rg | Name of the Azure Resource Group of virtual network when VNET_CREATE is set to 'No'
+    VNET_CREATE | Yes | **Empty:** VNET and Subnet resources must exist in resource group **VNET_RG_NAME**.  These resources will not be created.  **Yes:** VNET and Subnet resources in the resource group specified by **OCP_RG_NAME** will be created.  The values specified in both OCP_RG_NAME and VNET_RG_NAME must be the same.  **No:** A subnet in an existing virtual network specified by **VNET_NAME** in resource group **VNET_RG_NAME** will be created.  Both VNET resource group and virtual network should already exist.
+    VNET_NAME | ocp39Vnet | Name of the VNET
+    VNET_ADDR_PREFIX | 192.168.0.0/16 | Network segment for virtual network
+    SUBNET_NAME | ocpSubnet | Name of the subnet
+    SUBNET_ADDR_PREFIX | 192.168.122.0/24 | Network segment for subnet where all OpenShift node VM's will be provisioned
+    OCP_DOMAIN_SUFFIX | devcls.com | Domain suffix for node hostnames in the OpenShift cluster (cluster node hostnames)
 
-![IAM ScreenShot2](images/openshiftiamefg.jpg)
-  
-**Azure CLI 2.0**
+    After updating `provision-vms.sh`, run the script in a terminal window.  This shell script will provision all the Azure infrastructure resources required to deploy the OpenShift cluster.
+    ```
+    # Run the script 'scripts/provision-vms.sh'.  Specify, no. of application nodes to deploy in cluster.
+    $ ./scripts/provision-vms.sh <no. of nodes>
+    ```
+    The script should print the following message upon successful creation of all infrastructure resources.
+    ```
+    All OCP infrastructure resources created OK.
 
-1. **Create Service Principal and assign permissions to Resource Group**<br/>
-  a.  az ad sp create-for-rbac -n \<friendly name\> --password \<password\> --role contributor --scopes /subscriptions/\<subscription_id\>/resourceGroups/\<Resource Group Name\><br/>
-      Ex: `az ad sp create-for-rbac -n openshiftcloudprovider --password Pass@word1 --role contributor --scopes /subscriptions/555a123b-1234-5ccc-defgh-6789abcdef01/resourceGroups/00000test`<br/>
+    ```
 
-2. **Create Service Principal without assigning permissions to Resource Group**<br/>
-  a.  az ad sp create-for-rbac -n \<friendly name\> --password \<password\> --role contributor --skip-assignment<br/>
-      Ex: `az ad sp create-for-rbac -n openshiftcloudprovider --password Pass@word1 --role contributor --skip-assignment`<br/>
+  - **Option B:** Review the parameters (in the *parameters:* section) and their default values in the Azure ARM template file ``scripts/provision-vms.json``.  Update the parameter values in the file ``scripts/vms.parameters.json`` as necessary.
 
-You will get an output similar to:
+    Open a terminal window and run the following CLI command to provision all required infrastructure resources on Azure.
+    ```
+    # Deploy the ARM template `scripts/provision-vms.sh` using Azure CLI.  Substitute the correct value for the resource group.
+    $ az group deployment create --verbose --resource-group rh-ocp310-rg --template-file ./scripts/provision-vms.json --parameters @./scripts/vms.parameters.json
+    ```
+    Upon successful execution of the ARM template, the following message should be printed in the output.
+    ```
+      "provisioningState": "Succeeded",
+      "template": null,
+      "templateHash": "7624771502800391155",
+      "templateLink": null,
+      "timestamp": "2018-08-10T21:05:50.389722+00:00"
+    },
+    "resourceGroup": "rh-ocp310-rg"
+    ```
 
-```javascript
-{
-  "appId": "2c8c6a58-44ac-452e-95d8-a790f6ade583",
-  "displayName": "openshiftcloudprovider",
-  "name": "http://openshiftcloudprovider",
-  "password": "Pass@word1",
-  "tenant": "12a345bc-1234-dddd-12ab-34cdef56ab78"
-}
+2. Retrieve the subscription ID for your Azure account.  Note down the values for **id** (Subscription ID) and **tenantId** (AD Tenant ID) from the command output.  Save the values in a file.
+```
+# Retrieve subscription info. for your Azure account
+$ az account show
 ```
 
-The appId is used for the aadClientId parameter.
+3. Create an Azure Service Principal (SP).  This SP will be used by the *Azure Cloud Provider* OpenShift plug-in to create persistent volumes dynamically.  In a later step, we will define a Kubernetes *Storage Class* object for Azure disk storage and configure it as the default storage provider for persistent volumes for the OpenShift cluster.
+Specify appropriate values for **Subscription ID**, **Resource Group** and **SP Name** in the command below.  Make sure the SP Name is unique eg., [MTC Region]-OCP-Azure-SP-[Date]
+```
+# Create an Azure Service Principal.
+$ az ad sp create-for-rbac --name <SP Name> --password Cl0udpr0viders3cr3t --role contributor --scopes /subscription/<Subscription ID>/resourceGroups/<Resource Group>
+```
+Save the output of the above command in a file.
 
-To assign permissions, please follow the instructions from Azure CLI 1.0 Step 2 above.
+4. Login to the Bastion host VM using SSH (Terminal window). Install *Ansible* and *Git*.
+```
+# Login to Bastion host via SSH.  Substitute the IP Address of the DNS name of the Bastion host.
+$ ssh ocpuser@<Public IP Address / DNS name of Bastion Host>
+#
+# Install ansible
+$ sudo yum install ansible
+#
+# Install git
+$ sudo yum install git
+#
+$ ansible --version
+$ git --version
+```
 
-### Red Hat Subscription Access
+In the terminal window connected to the Bastion host, clone this [GitHub repository](https://github.com/ganrad/ocp-on-azure).  Make sure you are using the URL of your fork when cloning this repository.
+```
+# Switch to home directory
+$ cd
+# Clone your GitHub repository.
+$ git clone https://github.com/<Your-GitHub-Account>/ocp-on-azure.git
+#
+$ Switch to the 'ocp-on-azure/ansible-deploy' directory
+$ cd ocp-on-azure/ansible-deploy/
+```
 
-For security reasons, the method for registering the RHEL system has been changed to allow the use of an Organization ID and Activation Key as well as a Username and Password. Please know that it is more secure to use the Organization ID and Activation Key.
+6. Update `hosts` file with the IP Addresses (or DNS names) of all OpenShift nodes (Master + Infrastructure + Application).
 
-You can determine your Organization ID by running ```subscription-manager identity``` on a registered machine.  To create or find your Activation Key, please go here: https://access.redhat.com/management/activation_keys.
+7. Review `group_vars/ocp-servers` file and specify values for **rh_account_name**, **rh_account_pwd** & **pool_id** variables.  Also, specify the OpenShift CP and docker runtime versions in the **ocp_ver** and **docker_ver** variables respectively.
 
-You will also need to get the Pool ID that contains your entitlements for OpenShift.  You can retrieve this from the Red Hat portal by examining the details of the subscription that has the OpenShift entitlements.  Or you can contact your Red Hat administrator to help you.
+8. Update the ansible task script 'ansible-deploy/roles/install-ocp-preq/tasks/main.yml' in case you are planning to install OpenShift CP v3.9 or lower.  For installing OpenShift v3.9 or lower, package 'atomic-openshift-utils' needs to be installed on all nodes.  Open this script and search for the package by name.  Follow the instructions to install this package.
 
-### azuredeploy.Parameters.json File Explained
+9. Check if Ansible is able to connect to all OpenShift nodes.
+```
+# Ping all OpenShift nodes.  You current directory should be 'ocp-on-azure/ansible-deploy' directory.
+$ ansible -i hosts all -m ping
+```
 
-1.  _artifactsLocation: URL for artifacts (json, scripts, etc.)
-2.  customVhdOrGallery: Choose to use a custom VHD image or an image from the Azure Gallery. The valid inputs are "gallery" or "custom". The default is set to "gallery".
-2.  customStorageAccount: The URL to the storage account that contains your custom VHD image. Include the ending '/'. If "gallery" is chosen above, this parameter will not be used. Example: https://customstorageaccount.blob.core.windows.net/
-2.  customOsDiskName: The folder and name of the custom VHD image. If "gallery" is chosen above, this parameter will be not be used. Example: images/customosdisk.vhd
-2.  masterVmSize: Size of the Master VM. Select from one of the allowed VM sizes listed in the azuredeploy.json file
-3.  infraVmSize: Size of the Infra VM. Select from one of the allowed VM sizes listed in the azuredeploy.json file
-3.  nodeVmSize: Size of the Node VM. Select from one of the allowed VM sizes listed in the azuredeploy.json file
-4.  openshiftClusterPrefix: Cluster Prefix used to configure hostnames for all nodes - bastion, master, infra and nodes. Between 1 and 20 characters.
-5.  openshiftMasterPublicIpDnsLabel: A unique Public DNS host name (not FQDN) to reference the Master Node by
-6.  infraLbPublicIpDnsLabel: A unique Public DNS host name (not FQDN) to reference the Node Load Balancer by.  Used to access deployed applications
-7.  masterInstanceCount: Number of Masters nodes to deploy
-8.  infraInstanceCount: Number of infra nodes to deploy
-8.  nodeInstanceCount: Number of Nodes to deploy
-9.  dataDiskSize: Size of data disk to attach to nodes for Docker volume - valid sizes are 128 GB, 512 GB and 1023 GB
-10. adminUsername: Admin username for both OS (VM) login and initial OpenShift user
-11. openshiftPassword: Password for OpenShift user and root user
-11. enableMetrics: Enable Metrics - value is either "true" or "false"
-11. enableLogging: Enable Logging - value is either "true" or "false"
-11. enableCockpit: Enable Cockpit - value is either "true" or "false"
-12. rhsmUsernamePasswordOrActivationKey: Choose to use Username and Password or Organization ID and Activation Key for registration. Valid values are "usernamepassword" and "activationkey".
-12. rhsmUsernameOrOrgId: Red Hat Subscription Manager Username or Organization ID. If usernamepassword selected in previous input, then use Username; otherwise entier Organization ID. To find your Organization ID, run on registered server: `subscription-manager identity`.
-13. rhsmPasswordOrActivationKey: Red Hat Subscription Manager Password or Activation Key for your Cloud Access subscription. You can get this from [here](https://access.redhat.com/management/activation_keys).
-14. rhsmPoolId: The Red Hat Subscription Manager Pool ID that contains your OpenShift entitlements
-15. sshPublicKey: Copy your SSH Public Key here
-16. keyVaultResourceGroup: The name of the Resource Group that contains the Key Vault
-17. keyVaultName: The name of the Key Vault you created
-18. keyVaultSecret: The Secret Name you used when creating the Secret (that contains the Private Key)
-18. aadClientId: Azure Active Directory Client ID also known as Application ID for Service Principal
-18. aadClientSecret: Azure Active Directory Client Secret for Service Principal
-19. defaultSubDomainType: This will either be xipio (if you don't have your own domain) or custom if you have your own domain that you would like to use for routing
-20. defaultSubDomain: The wildcard DNS name you would like to use for routing if you selected custom above.  If you selected xipio above, you must still enter something here but it will not be used
-21. virtualNetworkName: The existing virtual network you would like to deploy into
-22. virtualNetworkResourceGroup: The name of the resource group to which the virtual network belongs
-23. masterSubnetName: The name of the existing master subnet
-24. nodeSubnetName: The name of the existing node subnet 
-## Deploy Template
+10. Run syntax check on ansible playbook.  If there are any errors, fix them before proceeding.
+```
+# Ensure you are in sub-directory 'ansible-deploy'.  If not, switch to this directory.
+$ cd ansible-deploy
+#
+# Check the syntax of commands in the playbook
+$ ansible-playbook -i hosts install.yml --syntax-check
+```
 
-Deploy to Azure using Azure Portal: 
-<a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FRaviTella%2FMTC_OpenShift_Container_Platform%2Fmaster%2Fazuredeploy.json" target="_blank"><img src="http://azuredeploy.net/deploybutton.png"/></a>
-<a href="http://armviz.io/#/?load=https%3A%2F%2Fraw.githubusercontent.com%2FRaviTella%2FMTC_OpenShift_Container_Platform%2Fmaster%2Fazuredeploy.json" target="_blank">
-    <img src="http://armviz.io/visualizebutton.png"/>
-</a><br/>
+11. Run the Ansible playbook `install.yml`.  This command will run for a while (~ 20 mins for 4 nodes).
+```
+# Run the Ansible playbook
+$ ansible-playbook -i hosts -v install.yml
+```
+For each OpenShift node (VM), the `ansible-playbook` command should print a count of all tasks successfully executed (ok), changed and failed. If there are any **failed** tasks, re-run the playbook until all tasks are successfully executed on all nodes. Upon successful execution of all playbook tasks on all nodes, the following message will be printed in the output.
+```
+PLAY RECAP *********************************************************************************************************************************
+ocp-infra.onemtcprod.net     : ok=14   changed=12   unreachable=0    failed=0   
+ocp-master.onemtcprod.net    : ok=14   changed=12   unreachable=0    failed=0   
+ocp-node1.onemtcprod.net     : ok=14   changed=12   unreachable=0    failed=0   
+ocp-node2.onemtcprod.net     : ok=14   changed=12   unreachable=0    failed=0
+```
 
-Once you have collected all of the prerequisites for the template, you can deploy the template by clicking Deploy to Azure or populating the **azuredeploy.parameters.json** file and executing Resource Manager deployment commands with PowerShell or the Azure CLI.
+12. Login via SSH to the OpenShift **Master** node (VM).  The OpenShift installer (Ansible playbook) should be run on this VM/Node.  Before proceeding with OpenShift installation, check the following -
+- Make sure you are able to login to all nodes/VMs (Master + Infrastructure + Application) using SSH
+- All nodes should be resolvable thru their DNS aliases within the VNET (ocpVnet)
+- Passwordless **sudo** access should be configured on all nodes (VMs)
+- For installing OpenShift CP v3.9 (or lower), download the Ansible hosts file (`scripts/ocp-hosts`) from the `ocp-on-azure` GitHub repository which you forked in a previous step.
+- For installing OpenShift CP v3.10 (or higher), download the Ansible hosts file (`scripts/ocp-hosts-3.10`) from the `ocp-on-azure` GitHub repository which you forked in a previous step.
 
-**Azure CLI 1.0**
+You can use **wget** or **curl** to download the Ansible hosts file.  See below.
+```
+# Download the ansible hosts file 'scripts/ocp-hosts-3.10'. Substitute your GitHub account name in the command below.
+# Alternatively, if you are installing OpenShift CP v3.9 (or lower version), download the 'scripts/ocp-hosts' file.
+$ wget https://raw.githubusercontent.com/<Your-GitHub-Account>/ocp-on-azure/master/scripts/ocp-hosts-3.10
+```
+Review the **ocp-hosts-3.10** file and update the hostnames for the OpenShift Master, Infrastructure and Application nodes (VM's).  Make other configuration changes as necessary.  Refer to the [OpenShift CP documentation](https://docs.openshift.com/) for details on configuring other sub-systems thru variables.  The provided script only installs a simple multi-node non-HA cluster with metrics sub-system enabled.  For installing and configuring other sub-systems such as logging, cloud provider plugins for persistent volumes, default storage classes etc, refer to the OpenShift documentation.
 
-1. Create Resource Group: azure group create \<name\> \<location\><br />
-Ex: `azure group create openshift-cluster westus`
-2. Create Resource Group Deployment: azure group deployment create --name \<deployment name\> --template-file \<template_file\> -e \<parameters_file\> --resource-group \<resource group name\> --nowait<br />
-Ex: `azure group deployment create --name ocpdeployment --template-file azuredeploy.json -e azuredeploy.parameters.json --resource-group openshift-cluster --nowait`
+13. Run the OpenShift Ansible Playbooks as below.
+- Run the `prerequisites.yml` playbook to run pre-requisite checks
+```
+# Run the 'prerequisites.yml' playbook to run pre-requisite checks. Specify the correct Ansible hosts inventory file.
+$ ansible-playbook -i ./ocp-hosts-3.10 /usr/share/ansible/openshift-ansible/playbooks/prerequisites.yml
+```
+If all the checks pass, you should see the output as below.
+```
+PLAY RECAP *********************************************************************************************************************************
+localhost                  : ok=11   changed=0    unreachable=0    failed=0   
+ocp-infra.onemtcprod.net   : ok=60   changed=14   unreachable=0    failed=0   
+ocp-master.onemtcprod.net  : ok=74   changed=15   unreachable=0    failed=0   
+ocp-node1.onemtcprod.net   : ok=60   changed=14   unreachable=0    failed=0   
+ocp-node2.onemtcprod.net   : ok=60   changed=14   unreachable=0    failed=0
+```
+- Next, run the `deploy_cluster.yml` playbook to deploy the OpenShift cluster.  This cluster deployment script should run for approximately 30-40 minutes (~ 4 nodes).
+```
+# Run the 'deploy_cluster.yml' playbook to deploy the OpenShift cluster
+$ ansible-playbook -i ./ocp-hosts-3.10 /usr/share/ansible/openshift-ansible/playbooks/deploy_cluster.yml
+```
+When the Ansible playbook run finishes, the output should list the status of all executed tasks.  See below.  For OpenShift CP v3.9 (or lower version), you will see a slightly different output.
+```
+PLAY RECAP *********************************************************************************************************************************
+localhost                  : ok=15   changed=0    unreachable=0    failed=0   
+ocp-infra.onemtcprod.net   : ok=119  changed=57   unreachable=0    failed=0   
+ocp-master.onemtcprod.net  : ok=807  changed=327  unreachable=0    failed=0   
+ocp-node1.onemtcprod.net   : ok=119  changed=57   unreachable=0    failed=0   
+ocp-node2.onemtcprod.net   : ok=119  changed=57   unreachable=0    failed=0   
 
-**Azure CLI 2.0**
 
-1. Create Resource Group: az group create -n \<name\> -l \<location\><br />
-Ex: `az group create -n openshift-cluster -l westus`
-2. Create Resource Group Deployment: az group deployment create --name \<deployment name\> --template-file \<template_file\> --parameters @\<parameters_file\> --resource-group \<resource group name\> --nowait<br />
-Ex: `az group deployment create --name ocpdeployment --template-file azuredeploy.json --parameters @azuredeploy.parameters.json --resource-group openshift-cluster --no-wait`
+INSTALLER STATUS ***************************************************************************************************************************
+Initialization              : Complete (0:00:23)
+Health Check                : Complete (0:02:10)
+Node Bootstrap Preparation  : Complete (0:18:59)
+etcd Install                : Complete (0:01:35)
+NFS Install                 : Complete (0:00:24)
+Master Install              : Complete (0:05:30)
+Master Additional Install   : Complete (0:02:10)
+Node Join                   : Complete (0:03:48)
+Hosted Install              : Complete (0:01:04)
+Web Console Install         : Complete (0:00:35)
+Metrics Install             : Complete (0:03:10)
+Service Catalog Install     : Complete (0:02:10)
+```
+If there are any tasks in failed state, review the exception messages, update the playbook (`install.yml`) and re-run the playbook.
 
+14.  OpenShift Web Console can be accessed @ - `https://<OpenShift Master Public Hostname>/`
 
-### NOTE
+Substitute the DNS name of the OpenShift cluster **Master Node** in the URL above.
 
-The OpenShift Ansible playbook does take a while to run when using VMs backed by Standard Storage. VMs backed by Premium Storage are faster. If you want Premium Storage, select a DS or GS series VM.
-<hr />
+**B] Tearing down the OpenShift CP cluster**
 
-Be sure to follow the OpenShift instructions to create the necessary DNS entry for the OpenShift Router for access to applications. <br />
-
-Currently there is a hiccup in the deployment of metrics and logging that will cause the deployment to take a little longer than normal.  When you look at the stdout files on the Bastion host, you will see that the installation had numerous retries for certain playbook tasks.  This is normal.
-
-### TROUBLESHOOTING
-
-If you encounter an error during deployment of the cluster, please view the deployment status.  The following Error Codes will help to narrow things down.
-
-1. Exit Code 3: Your Red Hat Subscription User Name / Password or Organization ID / Activation Key is incorrect
-2. Exit Code 4: Your Red Hat Pool ID is incorrect or there are no entitlements available
-3. Exit Code 5: Unable to provision Docker Thin Pool Volume
-4. Additionally in azure deployments, you might see an error which includes the following text during the network interface creation: 
-
-   Please make sure that the referenced resource exists, and that both resources are in the same region
-
-    This error occurs when the resources you are creating during the deployment and in a different region from the Virtual network. To fix this error make sure that the location of resource group of the VNet and the deployment are the same. 
-
-For further troubleshooting, please SSH into your Bastion node on port 22.  You will need to be root **(sudo su -)** and then navigate to the following directory: **/var/lib/waagent/custom-script/download**<br/><br/>
-You should see a folder named '0' and '1'.  In each of these folders, you will see two files, stderr and stdout.  You can look through these files to determine where the failure occurred.
-
-## Post-Deployment Operations
-
-### Metrics and logging
-
-**Metrics**
-
-If you deployed Metrics, it can take up to 15 minutes for Metrics to fully deploy. Please be patient.
-This is due to the fact that the Azure provider is configured after the cluster is installed and Metrics needs Persistent Storage from Azure so it hangs until the deployment script completes.
-
-You can check the status from the OpenShift Web Console or CLI by looking in the openShift-infra project.
-
-**Logging**
-
-If Logging is enabled, you will need to perform some post deployment steps in order to get it up and running.
-If Metrics is also enabled, please wait for all the Metrics pods to come on line before completing the post installation steps for Logging.
-
-First, log into the OpenShift Web Console and go into the logging project. Click on Deployment Config for logging-es.
-
-![Logging Deployment Config](images/loggingdeployconfig.jpg)
-
-Next, click on Deploy in upper right.
-
-![Logging ReDeploy](images/loggingredeploy.jpg)
-
-It will take up to 15 minutes from this point before Logging is online. You can check the status by clicking into the appropriate project (logging or openshift-infra) and checking the status of the pods. Once all the pods are online, the service is operational.
-
-To display metrics and logs, you need to logon to OpenShift ( https://publicDNSname:8443 ) go into the logging project, click on the Kubana route and accept the SSL exception in your browser, then do the same with the Hawkster metrics route in the openshift-infra project.
-
-### Creation of additional users
-
-To create additional (non-admin) users in your environment, login to your master server(s) via SSH and run:
-<br><i>htpasswd /etc/origin/master/htpasswd mynewuser</i>
-
-### Access to Cockpit
-
-If you enable Cockpit then the password for 'root' is set to be the same as the password for the first OpenShift user.
-
-Use user 'root' and the same password as you assigned to your OpenShift admin to login to Cockpit ( https://publicDNSname:9090 ).
-   
-### Additional OpenShift Configuration Options
- 
-You can configure additional settings per the official (<a href="https://docs.openshift.com/container-platform/3.5/welcome/index.html" target="_blank">OpenShift Enterprise Documentation</a>).
+After you are done using the OpenShift CP cluster, you can delete all Azure resources using Azure CLI or the [Azure Portal](https://portal.azure.com).  To delete all Azure resources using Azure CLI, refer to the command below.  Specify correct value for the Azure **Resource Group** name in the delete command.
+```
+# Delete the resource group and all associated resources.
+$ az group delete --name <Resource Group name>
+```

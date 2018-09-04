@@ -1,0 +1,72 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+     "OCP_RG_NAME": {
+         "value": "rh-ocp310-rg"
+     },
+     "RG_LOCATION": {
+         "value": "westus"
+     },
+     "OBJECT_ID": {
+         "value": ""
+     },
+     "RG_TAGS": {
+         "value": "CreatedBy=ganrad"
+     },
+     "KEY_VAULT_NAME": {
+         "value": "KEY-VAULT-MTC-BEL-OCP"
+     },
+     "KEY_SECRET_NAME": {
+         "value": "ocpNodeKey"
+     },
+     "KEY_SECRET_VALUE": {
+	"value": ""
+     },
+     "SSH_PUBLIC_KEY": {
+	"value": ""
+     },
+     "IMAGE_SIZE_MASTER": {
+         "value": "Standard_B2ms"
+     },
+     "IMAGE_SIZE_INFRA": {
+         "value": "Standard_B2ms"
+     },
+     "IMAGE_SIZE_NODE": {
+         "value": "Standard_B2ms"
+     },
+     "BASTION_HOST": {
+         "value": "ocp-bastion"
+     },
+     "OCP_MASTER_HOST": {
+         "value": "ocp-master"
+     },
+     "OCP_INFRA_HOST": {
+         "value": "ocp-infra"
+     },
+     "OCP_APP_NODE_COUNT": {
+         "value": 1
+     },
+     "VNET_RG_NAME": {
+         "value": "rh-ocp310-rg"
+     },
+     "VNET_CREATE": {
+         "value": "YES"
+     },
+     "VNET_NAME": {
+         "value": "ocp310VNet"
+     },
+     "VNET_ADDR_PREFIX": {
+         "value": "192.168.0.0/16"
+     },
+     "SUBNET_NAME": {
+         "value": "ocp310Subnet"
+     },
+     "SUBNET_ADDR_PREFIX": {
+         "value": "192.168.122.0/24"
+     },
+     "OCP_DOMAIN_SUFFIX": {
+         "value": "ocp-dev.com"
+     }
+  }
+}

@@ -1,0 +1,810 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+	"OCP_RG_NAME": {
+		"type": "string",
+		"defaultValue": "rh-ocp39-rg",
+		"metadata": {
+			"description": "Name of the Azure Resource Group where the OpenShift Cluster resources will be deployed."
+		}
+	},
+	"RG_LOCATION": {
+		"type": "string",
+		"defaultValue": "westus",
+		"allowedValues": [
+			"eastus",
+			"eastus2",
+			"westus",
+			"westus2",
+			"centralus"
+		],
+		"metadata": {
+			"description": "Region (name) where the IaaS resources should be provisioned eg., eastus, centralus, westus ..."
+		}
+	},
+	"OBJECT_ID": {
+		"type": "string",
+		"defaultValue": "",
+		"metadata": {
+			"description": "Object ID of the AD user. Get using Get-AzureRmADUser or 'az ad user show' CLI command"
+		}
+	},
+	"RG_TAGS": {
+		"type": "string",
+		"defaultValue": "CreatedBy=AdminUser",
+		"metadata": {
+			"description": "Space separated tags in '[name=value]' format. These tags are assigned to the resource group."
+		}
+	},
+	"KEY_VAULT_NAME": {
+		"type": "string",
+		"defaultValue": "RH-OCP-KEY-VAULT",
+		"metadata": {
+			"description": "Name of the key vault where the SSH private key to access the VM's will be stored"
+		}
+	},
+	"KEY_SECRET_NAME": {
+		"type": "string",
+		"defaultValue": "ocpNodeKey",
+		"metadata": {
+			"description": "Name of the secret with the SSH private key"
+		}
+	},
+	"KEY_SECRET_VALUE": {
+		"type": "string",
+		"metadata": {
+			"description": "Secret containing the SSH private key"
+		}
+	},
+	"SSH_PUBLIC_KEY": {
+		"type": "string",
+		"metadata": {
+			"description": "SSH public key"
+		}
+	},
+	"IMAGE_SIZE_MASTER": {
+		"type": "string",
+		"defaultValue": "Standard_B2ms",
+		"metadata": {
+			"description": "Azure VM Image Size for OpenShift Master nodes"
+		}
+	},
+	"IMAGE_SIZE_INFRA": {
+		"type": "string",
+		"defaultValue": "Standard_B2ms",
+		"metadata": {
+			"description": "Azure VM Image Size for Infrastructure nodes"
+		}
+	},
+	"IMAGE_SIZE_NODE": {
+		"type": "string",
+		"defaultValue": "Standard_B2ms",
+		"metadata": {
+			"description": "Azure VM Image Size for OpenShift Application nodes"
+		}
+	},
+	"BASTION_HOST": {
+		"type": "string",
+		"defaultValue": "ocp-bastion",
+		"metadata": {
+			"description": "Name of the Bastion host"
+		}
+	},
+	"OCP_MASTER_HOST": {
+		"type": "string",
+		"defaultValue": "ocp-master",
+		"metadata": {
+			"description": "Name of the OpenShift Master host"
+		}
+	},
+	"OCP_INFRA_HOST": {
+		"type": "string",
+		"defaultValue": "ocp-infra",
+		"metadata": {
+			"description": "Name of the OpenShift Infrastructure host"
+		}
+	},
+	"OCP_APP_NODE_COUNT": {
+		"type": "int",
+		"defaultValue": "2",
+		"metadata": {
+			"description": "Number of OpenShift Application nodes to provision"
+		}
+	},
+	"VNET_RG_NAME": {
+		"type": "string",
+		"defaultValue": "rh-ocp39-rg",
+		"metadata": {
+			"description": "Name of the Azure Resource Group of virtual network when VNET_CREATE is set to 'No or empty'"
+		}
+	},
+	"VNET_CREATE": {
+		"type": "string",
+		"defaultValue": "YES",
+		"metadata": {
+			"description": "Empty: VNET and Subnet resources must exist in resource group VNET_RG_NAME. These resources will not be created. Yes: VNET and Subnet resources in the resource group specified by OCP_RG_NAME will be created. The values specified in both OCP_RG_NAME and VNET_RG_NAME must be the same. No: A subnet in an existing virtual network specified by VNET_NAME in resource group VNET_RG_NAME will be created. Both VNET resource group and virtual network should already exist."
+		}
+	},
+	"VNET_NAME": {
+		"type": "string",
+		"defaultValue": "ocp39Vnet",
+		"metadata": {
+			"description": "Name of the VNET"
+		}
+	},
+	"VNET_ADDR_PREFIX": {
+		"type": "string",
+		"defaultValue": "192.168.0.0/16",
+		"metadata": {
+			"description": "Network segment for virtual network"
+		}
+	},
+	"SUBNET_NAME": {
+		"type": "string",
+		"defaultValue": "ocpSubnet",
+		"metadata": {
+			"description": "Name of the subnet"
+		}
+	},
+	"SUBNET_ADDR_PREFIX": {
+		"type": "string",
+		"defaultValue": "192.168.122.0/24",
+		"metadata": {
+			"description": "Network segment for subnet where all OpenShift node VM's will be provisioned"
+		}
+	},
+	"OCP_DOMAIN_SUFFIX": {
+		"type": "string",
+		"defaultValue": "devcls.com",
+		"metadata": {
+			"description": "Domain suffix for node hostnames in the OpenShift cluster (cluster node hostnames)"
+		}
+	}
+    },
+    "variables": {
+	"vnetId": "[resourceId(parameters('VNET_RG_NAME'), 'Microsoft.Network/virtualNetworks', parameters('VNET_NAME'))]",
+	"subnetId": "[concat(variables('vnetID'),'/subnets/', parameters('SUBNET_NAME'))]"
+    },
+    "functions": [ ],
+    "resources": [
+	{
+		"apiVersion": "2016-10-01",
+		"type": "Microsoft.KeyVault/vaults",
+		"name": "[parameters('KEY_VAULT_NAME')]",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"tenantId": "[subscription().tenantId]",
+		        "accessPolicies": [
+                    	{
+				"tenantId": "[subscription().tenantId]",
+				"objectId": "[parameters('OBJECT_ID')]",
+				"permissions": {
+				    "keys": [
+				    ],
+				    "secrets": [
+					"get",
+					"list",
+					"set",
+					"delete",
+					"backup",
+					"restore",
+					"recover"
+				    ],
+				    "certificates": [
+				    ],
+				    "storage": [
+				    ]
+                        	}
+                    	}
+                	],
+			"sku": {
+				"family": "A",
+				"name": "standard"
+			},
+			"enabledForDeployment": "true"
+		}
+	},
+	{
+		"apiVersion": "2016-10-01",
+		"type": "Microsoft.KeyVault/vaults/secrets",
+		"name": "[concat(parameters('KEY_VAULT_NAME'),'/',parameters('KEY_SECRET_NAME'))]",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"value": "[parameters('KEY_SECRET_VALUE')]"
+		},
+		"dependsOn": [
+			"[resourceId('Microsoft.KeyVault/vaults', parameters('KEY_VAULT_NAME'))]"
+		]
+	},
+	{
+		"condition": "[and(not(empty(parameters('VNET_CREATE'))),equals(toLower(parameters('VNET_CREATE')),'yes'))]",
+		"apiVersion": "2017-10-01",
+		"type": "Microsoft.Network/virtualNetworks",
+		"name": "[parameters('VNET_NAME')]",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"addressSpace": {
+				"addressPrefixes": [
+					"[parameters('VNET_ADDR_PREFIX')]"
+				]
+			},
+			"subnets": [
+				{
+					"name": "[parameters('SUBNET_NAME')]",
+					"properties": {
+						"addressPrefix": "[parameters('SUBNET_ADDR_PREFIX')]"
+					}
+				}
+			]
+		}
+	},
+	{
+		"apiVersion": "2017-10-01",
+		"type": "Microsoft.Network/publicIPAddresses",
+		"name": "ocpBastionPublicIP",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"publicIPAllocationMethod": "Static",
+			"publicIPAddressVersion": "IPv4",
+			"dnsSettings": {
+				"domainNameLabel": "[parameters('BASTION_HOST')]"
+			},
+			"idleTimeoutInMinutes": 4
+		}
+	},
+	{
+		"apiVersion": "2017-10-01",
+		"type": "Microsoft.Network/publicIPAddresses",
+		"name": "ocpMasterPublicIP",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"publicIPAllocationMethod": "Static",
+			"publicIPAddressVersion": "IPv4",
+			"dnsSettings": {
+				"domainNameLabel": "[parameters('OCP_MASTER_HOST')]"
+			},
+			"idleTimeoutInMinutes": 4
+		}
+	},
+	{
+		"apiVersion": "2017-10-01",
+		"type": "Microsoft.Network/publicIPAddresses",
+		"name": "ocpInfraPublicIP",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"publicIPAllocationMethod": "Static",
+			"publicIPAddressVersion": "IPv4",
+			"dnsSettings": {
+				"domainNameLabel": "[parameters('OCP_INFRA_HOST')]"
+			},
+			"idleTimeoutInMinutes": 4
+		}
+	},
+	{
+		"apiVersion": "2018-02-01",
+		"type": "Microsoft.Network/networkSecurityGroups",
+		"name": "ocpBastionSecurityGroup",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"securityRules": [
+				{
+					"name": "ocpSecurityGroupRuleSSH",
+					"properties": {
+						"description": "Open Inbound SSH port 22",
+						"protocol": "Tcp",
+						"sourcePortRange": "*",
+						"destinationPortRange": "22",
+						"sourceAddressPrefix": "*",
+						"destinationAddressPrefix": "*",
+						"access": "Allow",
+						"priority": 1000,
+						"direction": "Inbound",
+						"sourcePortRanges": [],
+						"destinationPortRanges": [],
+						"sourceAddressPrefixes": [],
+						"destinationAddressPrefixes": []
+					}
+				}
+			]
+		}
+	},
+	{
+		"apiVersion": "2018-02-01",
+		"type": "Microsoft.Network/networkSecurityGroups",
+		"name": "ocpMasterSecurityGroup",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"securityRules": [
+				{
+					"name": "ocpSecurityGroupRuleAPI",
+					"properties": {
+						"description": "Open HTTPS port 443 for API server",
+						"protocol": "Tcp",
+						"sourcePortRange": "*",
+						"destinationPortRange": "443",
+						"sourceAddressPrefix": "*",
+						"destinationAddressPrefix": "*",
+						"access": "Allow",
+						"priority": 900,
+						"direction": "Inbound",
+						"sourcePortRanges": [],
+						"destinationPortRanges": [],
+						"sourceAddressPrefixes": [],
+						"destinationAddressPrefixes": []
+					}
+				},
+				{
+					"name": "ocpSecurityGroupRuleCP",
+					"properties": {
+						"description": "Open port 9090 for Cockpit server",
+						"protocol": "Tcp",
+						"sourcePortRange": "*",
+						"destinationPortRange": "9090",
+						"sourceAddressPrefix": "*",
+						"destinationAddressPrefix": "*",
+						"access": "Allow",
+						"priority": 1000,
+						"direction": "Inbound",
+						"sourcePortRanges": [],
+						"destinationPortRanges": [],
+						"sourceAddressPrefixes": [],
+						"destinationAddressPrefixes": []
+					}
+				}
+			]
+		}
+	},
+	{
+		"apiVersion": "2018-02-01",
+		"type": "Microsoft.Network/networkSecurityGroups",
+		"name": "ocpInfraSecurityGroup",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"securityRules": [
+				{
+					"name": "ocpSecurityGroupRuleApp",
+					"properties": {
+						"description": "Open HTTP port 80 for Apps",
+						"protocol": "Tcp",
+						"sourcePortRange": "*",
+						"destinationPortRange": "80",
+						"sourceAddressPrefix": "*",
+						"destinationAddressPrefix": "*",
+						"access": "Allow",
+						"priority": 2000,
+						"direction": "Inbound",
+						"sourcePortRanges": [],
+						"destinationPortRanges": [],
+						"sourceAddressPrefixes": [],
+						"destinationAddressPrefixes": []
+					}
+				},
+				{
+					"name": "ocpSecurityGroupRuleAppSSL",
+					"properties": {
+						"description": "Open HTTPS port 443 for Apps",
+						"protocol": "Tcp",
+						"sourcePortRange": "*",
+						"destinationPortRange": "443",
+						"sourceAddressPrefix": "*",
+						"destinationAddressPrefix": "*",
+						"access": "Allow",
+						"priority": 1000,
+						"direction": "Inbound",
+						"sourcePortRanges": [],
+						"destinationPortRanges": [],
+						"sourceAddressPrefixes": [],
+						"destinationAddressPrefixes": []
+					}
+				}
+			]
+		}
+	},
+	{
+		"apiVersion": "2017-10-01",
+		"type": "Microsoft.Network/networkInterfaces",
+		"name": "bastionNIC",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"networkSecurityGroup": {
+				"id": "[resourceId('Microsoft.Network/networkSecurityGroups','ocpBastionSecurityGroup')]",
+				"location": "[resourceGroup().location]"
+			},
+			"ipConfigurations": [
+				{
+					"properties": {
+						"subnet": {
+							"id": "[variables('subnetId')]"
+						},
+						"publicIPAddress": {
+							"id": "[resourceId('Microsoft.Network/publicIPAddresses','ocpBastionPublicIP')]"
+						},
+						"privateIPAllocationMethod": "Dynamic",
+						"privateIPAddressVersion": "IPV4",
+						"primary": "true"
+					},
+					"name": "IPConfig1"
+				}
+			],
+			"enableAcceleratedNetworking": "false",
+			"enableIPforwarding": "false",
+			"primary": "true"
+		},
+		"dependsOn": [
+			"[resourceId('Microsoft.Network/publicIPAddresses', 'ocpBastionPublicIP')]",
+			"[resourceId('Microsoft.Network/networkSecurityGroups', 'ocpBastionSecurityGroup')]",
+			"[resourceId(parameters('VNET_RG_NAME'),'Microsoft.Network/virtualNetworks', parameters('VNET_NAME'))]"
+            	]
+	},
+	{
+		"apiVersion": "2017-10-01",
+		"type": "Microsoft.Network/networkInterfaces",
+		"name": "masterNIC",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"networkSecurityGroup": {
+				"id": "[resourceId('Microsoft.Network/networkSecurityGroups','ocpMasterSecurityGroup')]",
+				"location": "[resourceGroup().location]"
+			},
+			"ipConfigurations": [
+				{
+					"properties": {
+						"subnet": {
+							"id": "[variables('subnetId')]"
+						},
+						"publicIPAddress": {
+							"id": "[resourceId('Microsoft.Network/publicIPAddresses','ocpMasterPublicIP')]"
+						},
+						"privateIPAllocationMethod": "Dynamic",
+						"privateIPAddressVersion": "IPV4",
+						"primary": "true"
+					},
+					"name": "IPConfig1"
+				}
+			],
+			"enableAcceleratedNetworking": "false",
+			"enableIPforwarding": "false",
+			"primary": "true"
+		},
+		"dependsOn": [
+			"[resourceId('Microsoft.Network/publicIPAddresses', 'ocpMasterPublicIP')]",
+			"[resourceId('Microsoft.Network/networkSecurityGroups', 'ocpMasterSecurityGroup')]",
+			"[resourceId(parameters('VNET_RG_NAME'),'Microsoft.Network/virtualNetworks', parameters('VNET_NAME'))]"
+            	]
+	},
+	{
+		"apiVersion": "2017-10-01",
+		"type": "Microsoft.Network/networkInterfaces",
+		"name": "infraNIC",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"networkSecurityGroup": {
+				"id": "[resourceId('Microsoft.Network/networkSecurityGroups','ocpInfraSecurityGroup')]",
+				"location": "[resourceGroup().location]"
+			},
+			"ipConfigurations": [
+				{
+					"properties": {
+						"subnet": {
+							"id": "[variables('subnetId')]"
+						},
+						"publicIPAddress": {
+							"id": "[resourceId('Microsoft.Network/publicIPAddresses','ocpInfraPublicIP')]"
+						},
+						"privateIPAllocationMethod": "Dynamic",
+						"privateIPAddressVersion": "IPV4",
+						"primary": "true"
+					},
+					"name": "IPConfig1"
+				}
+			],
+			"enableAcceleratedNetworking": "false",
+			"enableIPforwarding": "false",
+			"primary": "true"
+		},
+		"dependsOn": [
+			"[resourceId('Microsoft.Network/publicIPAddresses', 'ocpInfraPublicIP')]",
+			"[resourceId('Microsoft.Network/networkSecurityGroups', 'ocpInfraSecurityGroup')]",
+			"[resourceId(parameters('VNET_RG_NAME'),'Microsoft.Network/virtualNetworks', parameters('VNET_NAME'))]"
+            	]
+	},
+	{
+		"apiVersion": "2017-10-01",
+		"type": "Microsoft.Network/networkInterfaces",
+		"name": "[concat('nodeNIC','-',copyIndex())]",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"ipConfigurations": [
+				{
+					"properties": {
+						"subnet": {
+							"id": "[variables('subnetId')]"
+						},
+						"privateIPAllocationMethod": "Dynamic",
+						"privateIPAddressVersion": "IPV4",
+						"primary": "true"
+					},
+					"name": "IPConfig1"
+				}
+			],
+			"enableAcceleratedNetworking": "false",
+			"enableIPforwarding": "false",
+			"primary": "true"
+		},
+		"copy": {
+			"name": "appNodeNics",
+			"count": "[parameters('OCP_APP_NODE_COUNT')]"
+		},
+		"dependsOn": [
+			"[resourceId(parameters('VNET_RG_NAME'),'Microsoft.Network/virtualNetworks', parameters('VNET_NAME'))]"
+		]
+	},
+	{
+		"apiVersion": "2018-06-01",
+		"type": "Microsoft.Compute/availabilitySets",
+		"name": "ocpAvailabilitySet",
+		"location": "[resourceGroup().location]",
+		"properties": {
+			"platformUpdateDomainCount": 5,
+			"platformFaultDomainCount": 2
+		},
+		"sku": {
+			"name": "Aligned"
+		}
+	},
+	{
+		"apiVersion": "2018-06-01",
+		"type": "Microsoft.Compute/virtualMachines",
+		"name": "[concat(parameters('BASTION_HOST'),'.',parameters('OCP_DOMAIN_SUFFIX'))]",
+		"location": "[resourceGroup().location]",
+		"properties": {
+                	"availabilitySet": {
+                    		"id": "[resourceId('Microsoft.Compute/availabilitySets', 'ocpAvailabilitySet')]"
+                	},
+			"hardwareProfile": {
+			    "vmSize": "[parameters('IMAGE_SIZE_MASTER')]"
+			},
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "RedHat",
+                        "offer": "RHEL",
+                        "sku": "7-RAW",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Linux",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Premium_LRS"
+                        },
+                        "diskSizeGB": 32
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[concat(parameters('BASTION_HOST'),'.',parameters('OCP_DOMAIN_SUFFIX'))]",
+                    "adminUsername": "ocpuser",
+                    "linuxConfiguration": {
+                        "disablePasswordAuthentication": true,
+                        "ssh": {
+                            "publicKeys": [
+                                {
+                                    "path": "/home/ocpuser/.ssh/authorized_keys",
+                                    "keyData": "[parameters('SSH_PUBLIC_KEY')]"
+                                }
+                            ]
+                        }
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', 'bastionNIC')]",
+                            "properties": {
+                                "primary": true
+                            }
+                        }
+                    ]
+                }
+            },
+	    "dependsOn": [
+		"[resourceId('Microsoft.Network/networkInterfaces', 'bastionNIC')]",
+		"[resourceId('Microsoft.Compute/availabilitySets', 'ocpAvailabilitySet')]"
+            ]
+	},
+	{
+		"apiVersion": "2018-06-01",
+		"type": "Microsoft.Compute/virtualMachines",
+		"name": "[concat(parameters('OCP_MASTER_HOST'),'.',parameters('OCP_DOMAIN_SUFFIX'))]",
+		"location": "[resourceGroup().location]",
+		"properties": {
+                	"availabilitySet": {
+                    		"id": "[resourceId('Microsoft.Compute/availabilitySets', 'ocpAvailabilitySet')]"
+                	},
+			"hardwareProfile": {
+			    "vmSize": "[parameters('IMAGE_SIZE_MASTER')]"
+			},
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "RedHat",
+                        "offer": "RHEL",
+                        "sku": "7-RAW",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Linux",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Premium_LRS"
+                        },
+                        "diskSizeGB": 32
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[concat(parameters('OCP_MASTER_HOST'),'.',parameters('OCP_DOMAIN_SUFFIX'))]",
+                    "adminUsername": "ocpuser",
+                    "linuxConfiguration": {
+                        "disablePasswordAuthentication": true,
+                        "ssh": {
+                            "publicKeys": [
+                                {
+                                    "path": "/home/ocpuser/.ssh/authorized_keys",
+                                    "keyData": "[parameters('SSH_PUBLIC_KEY')]"
+                                }
+                            ]
+                        }
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', 'masterNIC')]",
+                            "properties": {
+                                "primary": true
+                            }
+                        }
+                    ]
+                }
+            },
+	    "dependsOn": [
+		"[resourceId('Microsoft.Network/networkInterfaces', 'masterNIC')]",
+		"[resourceId('Microsoft.Compute/availabilitySets', 'ocpAvailabilitySet')]"
+            ]
+	},
+	{
+		"apiVersion": "2018-06-01",
+		"type": "Microsoft.Compute/virtualMachines",
+		"name": "[concat(parameters('OCP_INFRA_HOST'),'.',parameters('OCP_DOMAIN_SUFFIX'))]",
+		"location": "[resourceGroup().location]",
+		"properties": {
+                	"availabilitySet": {
+                    		"id": "[resourceId('Microsoft.Compute/availabilitySets', 'ocpAvailabilitySet')]"
+                	},
+			"hardwareProfile": {
+			    "vmSize": "[parameters('IMAGE_SIZE_MASTER')]"
+			},
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "RedHat",
+                        "offer": "RHEL",
+                        "sku": "7-RAW",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Linux",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Premium_LRS"
+                        },
+                        "diskSizeGB": 32
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[concat(parameters('OCP_INFRA_HOST'),'.',parameters('OCP_DOMAIN_SUFFIX'))]",
+                    "adminUsername": "ocpuser",
+                    "linuxConfiguration": {
+                        "disablePasswordAuthentication": true,
+                        "ssh": {
+                            "publicKeys": [
+                                {
+                                    "path": "/home/ocpuser/.ssh/authorized_keys",
+                                    "keyData": "[parameters('SSH_PUBLIC_KEY')]"
+                                }
+                            ]
+                        }
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', 'infraNIC')]",
+                            "properties": {
+                                "primary": true
+                            }
+                        }
+                    ]
+                }
+            },
+	    "dependsOn": [
+		"[resourceId('Microsoft.Network/networkInterfaces', 'infraNIC')]",
+		"[resourceId('Microsoft.Compute/availabilitySets', 'ocpAvailabilitySet')]"
+            ]
+	},
+	{
+		"apiVersion": "2018-06-01",
+		"type": "Microsoft.Compute/virtualMachines",
+		"name": "[concat('ocp-node',copyIndex(),'.',parameters('OCP_DOMAIN_SUFFIX'))]",
+		"location": "[resourceGroup().location]",
+		"properties": {
+                	"availabilitySet": {
+                    		"id": "[resourceId('Microsoft.Compute/availabilitySets', 'ocpAvailabilitySet')]"
+                	},
+			"hardwareProfile": {
+			    "vmSize": "[parameters('IMAGE_SIZE_NODE')]"
+			},
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "RedHat",
+                        "offer": "RHEL",
+                        "sku": "7-RAW",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Linux",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Premium_LRS"
+                        },
+                        "diskSizeGB": 32
+                    },
+                    "dataDisks": []
+                },
+                "osProfile": {
+                    "computerName": "[concat('ocp-node',copyIndex(),'.',parameters('OCP_DOMAIN_SUFFIX'))]",
+                    "adminUsername": "ocpuser",
+                    "linuxConfiguration": {
+                        "disablePasswordAuthentication": true,
+                        "ssh": {
+                            "publicKeys": [
+                                {
+                                    "path": "/home/ocpuser/.ssh/authorized_keys",
+                                    "keyData": "[parameters('SSH_PUBLIC_KEY')]"
+                                }
+                            ]
+                        }
+                    },
+                    "secrets": []
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat('nodeNIC','-',copyIndex()))]",
+                            "properties": {
+                                "primary": true
+                            }
+                        }
+                    ]
+                }
+            },
+	    "dependsOn": [
+		"[resourceId('Microsoft.Network/networkInterfaces', concat('nodeNIC','-',copyIndex()))]",
+		"[resourceId('Microsoft.Compute/availabilitySets', 'ocpAvailabilitySet')]"
+            ],
+	    "copy": {
+		"name": "ocpAppNodes",
+		"count": "[parameters('OCP_APP_NODE_COUNT')]"
+	    }
+	}
+    ],
+    "outputs": {  }
+}
