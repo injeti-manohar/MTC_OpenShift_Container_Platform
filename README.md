@@ -103,7 +103,7 @@ This project assumes readers have prior experience installing Red Hat OpenShift 
 
        ```
        $ cd ./terraform-deploy/azurerm
-       $ ./init.sh ARG1 ARG2 ARG3 ARG4 ARG5
+       $ ./../init.sh ARG1 ARG2 ARG3 ARG4 ARG5
        ```
        Substitute the correct values for arguments as described in the table below.
        
@@ -121,7 +121,7 @@ This project assumes readers have prior experience installing Red Hat OpenShift 
 
        ```
        $ cd ./terraform-deploy/azurerm
-       $ ./apply.sh ARG1 ARG2 ARG3 ARG4 ARG5 ARG6
+       $ ./../apply.sh ARG1 ARG2 ARG3 ARG4 ARG5 ARG6
        ```
        Specify the location of the SSH Public Key (eg., ~/.ssh/id_rsa.pub) and pass it as argument 6 (ARG6) in the command above.  The first five argument values are exactly the same as the `init.sh` script.
 
@@ -131,7 +131,7 @@ This project assumes readers have prior experience installing Red Hat OpenShift 
 
        ```
        $ cd ./terraform-deploy/azurerm
-       $ ./destroy.sh ARG1 ARG2 ARG3 ARG4 ARG5
+       $ ./../destroy.sh ARG1 ARG2 ARG3 ARG4 ARG5
        ```
        The argument values are the same as the `init.sh` script.
 
